@@ -139,6 +139,7 @@ public class Database extends AbstractVerticle
         {
           LOGGER.error("❌ Query failed: {}. Error: {}", query, ar.cause().getMessage(), ar.cause());
 
+          // TODO: use msg.fail()
           message.reply(new JsonObject().put("msg", "fail").put("ERROR", ar.cause().getMessage()));
         }
       });

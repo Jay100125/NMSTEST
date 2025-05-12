@@ -95,15 +95,17 @@ public class Auth
 
       query.put(PARAMS, params);
 
-      executeQuery(query)
+      executeQuery(query) // TODO: don't use onSuccess & onFailure -> instead use onComplete()
         .onSuccess(dbResult ->
         {
+          // TODO: why can't we use dbResult.succeed()?
           if (SUCCESS.equals(dbResult.getString(MSG)))
           {
-            var resultArray = dbResult.getJsonArray("result");
+            var resultArray = dbResult.getJsonArray("result"); // TODO : use constant
 
             if (resultArray != null && !resultArray.isEmpty())
             {
+              // TODO: hardcode getJsonObject(0) ??
               var userId = resultArray.getJsonObject(0).getLong(ID);
 
               LOGGER.info("User registered: {} with ID: {}", username, userId);
@@ -115,11 +117,12 @@ public class Auth
                 .putHeader("Content-Type", "application/json")
                 .end(response
                   .put(MSG, SUCCESS)
-                  .put("user_id", userId)
+                  .put("user_id", userId) // TODO : use constant
                   .encodePrettily());
             }
             else
             {
+              // TODO : APIUtils
               ApiUtils.sendError(ctx, 500, "Failed to register user: No ID returned from database.");
             }
           }
@@ -128,7 +131,7 @@ public class Auth
 
             var error = dbResult.getString("ERROR", "Failed to register user due to a database error.");
 
-            if (error.contains("users_username_key"))
+            if (error.contains("users_username_key")) // TODO : use constant
             { // Check for unique constraint violation on username
               ApiUtils.sendError(ctx, 409, "Username already exists");
             }
@@ -222,6 +225,7 @@ public class Auth
 
               LOGGER.info("User logged in: {}", username);
 
+              // TODO: any specific use?
               response.clear(); // Ensure response is clean
 
               ctx.response()

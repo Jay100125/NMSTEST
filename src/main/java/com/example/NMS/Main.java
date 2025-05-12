@@ -19,7 +19,7 @@ public class Main
     vertx.deployVerticle(new Server())
       .compose(res ->
       {
-        LOGGER.info("HTTP server verticle deployed");
+        LOGGER.info("HTTP server verticle deployed"); // TODO: don't add logs here instead print inside verticle in start method
 
         return vertx.deployVerticle(Database.class.getName());
       })

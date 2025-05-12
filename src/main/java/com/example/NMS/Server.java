@@ -27,6 +27,7 @@ public class Server extends AbstractVerticle
   public void start(Promise<Void> startPromise)
   {
 
+    // TODO: Use Var
     JWTAuth jwtAuth = JWTAuth.create(vertx, new JWTAuthOptions()
       .addPubSecKey(new PubSecKeyOptions()
         .setAlgorithm("HS256")
@@ -47,6 +48,7 @@ public class Server extends AbstractVerticle
 
     router.route("/api/*").handler(ctx ->
     {
+      // TODO: use var
       String path = ctx.normalizedPath();
       if (path.endsWith("/register") || path.endsWith("/login"))
       {

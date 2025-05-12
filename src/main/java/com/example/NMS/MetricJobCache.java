@@ -36,6 +36,7 @@ public class MetricJobCache
       return;
     }
 
+    // TODO : use var
     String query = "SELECT m.metric_id, m.provisioning_job_id, m.name AS metric_name, m.polling_interval, " +
       "pj.ip, pj.port, cp.cred_data " +
       "FROM metrics m " +

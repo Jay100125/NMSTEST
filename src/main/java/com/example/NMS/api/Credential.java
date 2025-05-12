@@ -45,6 +45,7 @@ public class Credential
     {
       var body =  context.body().asJsonObject();
 
+      // TODO : if you can make this basic changes generic in common class then please do that
       // Validate the request body
       if (body == null || body.isEmpty() || !body.containsKey(CREDENTIAL_NAME) || !body.containsKey(SYSTEM_TYPE) || !body.containsKey(CRED_DATA))
       {
@@ -66,6 +67,7 @@ public class Credential
         return;
       }
 
+      // TODO : what if in future new device type added!!!
       if (!systemType.equals(WINDOWS) && !systemType.equals(LINUX) && !systemType.equals(SNMP))
       {
         ApiUtils.sendError(context, 400, "invalid system_type");
@@ -149,6 +151,7 @@ public class Credential
       // Validate sys_type if provided
       var systemType = body.getString(SYSTEM_TYPE);
 
+      // TODO : why system type hardcode checks?
       if (systemType != null && !systemType.isEmpty())
       {
         if (!systemType.equals(WINDOWS) && !systemType.equals(LINUX) && !systemType.equals(SNMP))

@@ -58,7 +58,7 @@ public class Discovery
 
       var discoveryName = body.getString(DISCOVERY_PROFILE_NAME);
 
-      var credentialIdsArray = body.getJsonArray(CREDENTIAL_PROFILE_ID);
+      var credentialIdsArray = body.getJsonArray(CREDENTIAL_PROFILE_ID); // TODO: never ever variable name should contain the datatype
 
       var ip = body.getString(IP_ADDRESS);
 

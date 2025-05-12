@@ -3,6 +3,7 @@ package com.example.NMS.service;
 import com.example.NMS.MetricJobCache;
 import com.example.NMS.constant.QueryConstant;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -32,6 +33,7 @@ public class QueryProcessor
     {
       try
       {
+        // TODO : EVENTBUS_ADDRESS ?? Give some meaningful name
         vertx.eventBus().<JsonObject>request(EVENTBUS_ADDRESS, query, ar ->
         {
           if (ar.succeeded())
@@ -74,6 +76,7 @@ public class QueryProcessor
     {
       try
       {
+        // TODO : addresses are mostly in small case with dot separator
         vertx.eventBus().request(EVENTBUS_BATCH_ADDRESS, batchQuery, ar ->
         {
           if (ar.succeeded())

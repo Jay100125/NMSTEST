@@ -31,6 +31,7 @@ public class DatabaseClient
         .setReconnectAttempts(5)
         .setReconnectInterval(1000);
 
+      // TODO: use var
       PoolOptions poolOptions = new PoolOptions()
         .setMaxSize(10)
         .setIdleTimeout(30) // seconds
