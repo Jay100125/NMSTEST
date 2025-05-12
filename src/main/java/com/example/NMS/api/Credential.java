@@ -2,6 +2,7 @@ package com.example.NMS.api;
 
 import com.example.NMS.constant.QueryConstant;
 import com.example.NMS.service.QueryProcessor;
+import com.example.NMS.utility.ApiUtils;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -13,21 +14,24 @@ import static com.example.NMS.service.QueryProcessor.executeQuery;
 import static com.example.NMS.constant.Constant.*;
 import static com.example.NMS.constant.QueryConstant.*;
 
+/**
+ * Manages CRUD operations for SSH credentials in Lite NMS, handling creation, updating, retrieval, and deletion.
+ */
 public class Credential
 {
-  private static final Logger logger = LoggerFactory.getLogger(Credential.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(Credential.class);
 
   public void init(Router credentialRouter)
   {
-    credentialRouter.post("/api/credential").handler(this::handlePostCredential);
+    credentialRouter.post("/api/credential").handler(this::createCredential);
 
-    credentialRouter.patch("/api/credential/:id").handler(this::handlePatchCredential);
+    credentialRouter.patch("/api/credential/:id").handler(this::updateCredential);
 
-    credentialRouter.get("/api/credential").handler(this::handleGetAllCredentials);
+    credentialRouter.get("/api/credential").handler(this::getAllCredentials);
 
-    credentialRouter.get("/api/credential/:id").handler(this::handleGetCredentialById);
+    credentialRouter.get("/api/credential/:id").handler(this::getCredentialById);
 
-    credentialRouter.delete("/api/credential/:id").handler(this::handleDeleteCredential);
+    credentialRouter.delete("/api/credential/:id").handler(this::deleteCredential);
   }
 
   /**
@@ -35,7 +39,7 @@ public class Credential
    *
    * @param context The routing context.
    */
-  private void handlePostCredential(RoutingContext context)
+  private void createCredential(RoutingContext context)
   {
     try
     {
@@ -44,34 +48,34 @@ public class Credential
       // Validate the request body
       if (body == null || body.isEmpty() || !body.containsKey(CREDENTIAL_NAME) || !body.containsKey(SYSTEM_TYPE) || !body.containsKey(CRED_DATA))
       {
-        sendError(context, 400, "missing field or invalid data");
+        ApiUtils.sendError(context, 400, "missing field or invalid data");
 
         return;
       }
 
       var credentialName = body.getString(CREDENTIAL_NAME);
 
-      var sysType = body.getString(SYSTEM_TYPE);
+      var systemType = body.getString(SYSTEM_TYPE);
 
-      var credData = body.getJsonObject(CRED_DATA);
+      var credentialData = body.getJsonObject(CRED_DATA);
 
-      if (credentialName.isEmpty() || sysType.isEmpty() || !credData.containsKey(USER) || !credData.containsKey(PASSWORD))
+      if (credentialName.isEmpty() || systemType.isEmpty() || !credentialData.containsKey(USER) || !credentialData.containsKey(PASSWORD) || credentialData.getString(USER).isEmpty() || credentialData.getString(PASSWORD).isEmpty())
       {
-        sendError(context, 400, "missing field or invalid data");
+        ApiUtils.sendError(context, 400, "missing field or invalid data");
 
         return;
       }
 
-      if (!sysType.equals("windows") && !sysType.equals("linux") && !sysType.equals("snmp"))
+      if (!systemType.equals(WINDOWS) && !systemType.equals(LINUX) && !systemType.equals(SNMP))
       {
-        sendError(context, 400, "invalid system_type");
+        ApiUtils.sendError(context, 400, "invalid system_type");
 
         return;
       }
 
       var insertQuery = new JsonObject()
         .put(QUERY, INSERT_CREDENTIAL)
-        .put(PARAMS, new JsonArray().add(credentialName).add(sysType).add(credData));
+        .put(PARAMS, new JsonArray().add(credentialName).add(systemType).add(credentialData));
 
       executeQuery(insertQuery)
         .onSuccess(result ->
@@ -90,19 +94,19 @@ public class Credential
           }
           else
           {
-            sendError(context, 409, result.getString(ERROR));
+            ApiUtils.sendError(context, 409, result.getString(ERROR));
           }
         })
         .onFailure(err ->
         {
-          logger.error("Failed to create credential: {}", err.getMessage(), err);
+          LOGGER.error("Failed to create credential: {}", err.getMessage(), err);
 
-          sendError(context, 500, "Database error: " + err.getMessage());
+          ApiUtils.sendError(context, 500, "Database error: " + err.getMessage());
         });
     }
     catch (Exception e)
     {
-      logger.error(e.getMessage(), e);
+      LOGGER.error(e.getMessage(), e);
     }
   }
 
@@ -112,12 +116,12 @@ public class Credential
    * @param context The routing context.
    */
 
-  private void handlePatchCredential(RoutingContext context)
+  private void updateCredential(RoutingContext context)
   {
     try
     {
       // Parse and validate ID
-      String idStr = context.pathParam(ID);
+      var idStr = context.pathParam(ID);
 
       long id;
 
@@ -127,47 +131,47 @@ public class Credential
       }
       catch (Exception e)
       {
-        sendError(context, 400, "Invalid ID");
+        ApiUtils.sendError(context, 400, "Invalid ID");
 
         return;
       }
 
       // Parse request body
-      JsonObject body = context.body().asJsonObject();
+      var body = context.body().asJsonObject();
 
       if (body == null || body.isEmpty())
       {
-        sendError(context, 400, "Missing or invalid data");
+        ApiUtils.sendError(context, 400, "Missing or invalid data");
 
         return;
       }
 
       // Validate sys_type if provided
-      String sysType = body.getString(SYSTEM_TYPE);
+      var systemType = body.getString(SYSTEM_TYPE);
 
-      if (sysType != null && !sysType.isEmpty())
+      if (systemType != null && !systemType.isEmpty())
       {
-        if (!sysType.equals("windows") && !sysType.equals("linux") && !sysType.equals("snmp"))
+        if (!systemType.equals(WINDOWS) && !systemType.equals(LINUX) && !systemType.equals(SNMP))
         {
 
-          sendError(context, 400, "Invalid sys_type");
+          ApiUtils.sendError(context, 400, "Invalid sys_type");
 
           return;
         }
       }
 
       // Validate cred_data if provided
-      JsonObject credData = body.getJsonObject(CRED_DATA);
+      var credentialData = body.getJsonObject(CRED_DATA);
 
-      if (credData != null && (!credData.containsKey(USER) || !credData.containsKey(PASSWORD)))
+      if (credentialData != null && (!credentialData.containsKey(USER) || !credentialData.containsKey(PASSWORD)))
       {
-        sendError(context, 400, "cred_data must contain user and password");
+        ApiUtils.sendError(context, 400, "cred_data must contain user and password");
 
         return;
       }
 
       // Check if credential exists
-      JsonObject existsQuery = new JsonObject()
+      var existsQuery = new JsonObject()
         .put(QUERY, GET_CREDENTIAL_BY_ID)
         .put(PARAMS, new JsonArray().add(id));
 
@@ -180,21 +184,21 @@ public class Credential
           }
 
           // Prepare update parameters
-          JsonArray params = new JsonArray()
+          var params = new JsonArray()
             .add(body.getString(CREDENTIAL_NAME)) // Can be null
-            .add(sysType) // Can be null
-            .add(credData) // Can be null
+            .add(systemType) // Can be null
+            .add(credentialData) // Can be null
             .add(id);
 
-          JsonObject updateQuery = new JsonObject()
-            .put("query", UPDATE_CREDENTIAL)
-            .put("params", params);
+          var updateQuery = new JsonObject()
+            .put(QUERY, UPDATE_CREDENTIAL)
+            .put(PARAMS, params);
 
           return QueryProcessor.executeQuery(updateQuery);
         })
         .onSuccess(result -> {
 
-          JsonArray resultArray = result.getJsonArray("result");
+          var resultArray = result.getJsonArray("result");
 
           if (SUCCESS.equals(result.getString(MSG)) && !resultArray.isEmpty())
           {
@@ -208,25 +212,25 @@ public class Credential
           }
           else
           {
-            sendError(context, 404, "Credential not found");
+            ApiUtils.sendError(context, 404, "Credential not found");
           }
         })
         .onFailure(err ->
         {
-          logger.error("Failed to update credential: {}", err.getMessage(), err);
+          LOGGER.error("Failed to update credential: {}", err.getMessage(), err);
 
-          int statusCode = err.getMessage().equals("Credential not found") ? 404 : 500;
+          var statusCode = err.getMessage().equals("Credential not found") ? 404 : 500;
 
-          String errorMsg = statusCode == 404 ? err.getMessage() : "Database error: " + err.getMessage();
+          var errorMsg = statusCode == 404 ? err.getMessage() : "Database error: " + err.getMessage();
 
-          sendError(context, statusCode, errorMsg);
+          ApiUtils.sendError(context, statusCode, errorMsg);
         });
     }
     catch (Exception e)
     {
-      logger.error("Error in patch credential: {}", e.getMessage(), e);
+      LOGGER.error("Error in patch credential: {}", e.getMessage(), e);
 
-      sendError(context, 500, "Internal server error");
+      ApiUtils.sendError(context, 500, "Internal server error");
     }
   }
 
@@ -235,9 +239,9 @@ public class Credential
    *
    * @param context The routing context.
    */
-  private void handleGetAllCredentials(RoutingContext context)
+  private void getAllCredentials(RoutingContext context)
   {
-    logger.info("Get all credentials");
+    LOGGER.info("Get all credentials");
 
     var getAllQuery = new JsonObject()
       .put(QUERY, QueryConstant.GET_ALL_CREDENTIALS);
@@ -254,14 +258,14 @@ public class Credential
         }
         else
         {
-          sendError(context, 404, "No credentials found");
+          ApiUtils.sendError(context, 404, "No credentials found");
         }
       })
       .onFailure(err ->
       {
-        logger.error("Failed to fetch credentials: {}", err.getMessage(), err);
+        LOGGER.error("Failed to fetch credentials: {}", err.getMessage(), err);
 
-        sendError(context, 500, "Database error: " + err.getMessage());
+        ApiUtils.sendError(context, 500, "Database error: " + err.getMessage());
       });
   }
 
@@ -271,7 +275,7 @@ public class Credential
    *
    * @param context The routing context.
    */
-  private void handleGetCredentialById(RoutingContext context)
+  private void getCredentialById(RoutingContext context)
   {
     try
     {
@@ -285,7 +289,7 @@ public class Credential
       }
       catch (Exception e)
       {
-        sendError(context, 400, "Wrong ID");
+        ApiUtils.sendError(context, 400, "Wrong ID");
 
         return;
       }
@@ -308,19 +312,19 @@ public class Credential
           }
           else
           {
-            sendError(context, 404, "Credential not found");
+            ApiUtils.sendError(context, 404, "Credential not found");
           }
         })
         .onFailure(err ->
         {
-          logger.error("Failed to fetch credential {}: {}", id, err.getMessage(), err);
+          LOGGER.error("Failed to fetch credential {}: {}", id, err.getMessage(), err);
 
-          sendError(context, 500, "Database error: " + err.getMessage());
+          ApiUtils.sendError(context, 500, "Database error: " + err.getMessage());
         });
     }
     catch (Exception e)
     {
-      logger.error(e.getMessage(), e);
+      LOGGER.error(e.getMessage(), e);
     }
   }
 
@@ -330,7 +334,7 @@ public class Credential
    *
    * @param context The routing context.
    */
-  private void handleDeleteCredential(RoutingContext context)
+  private void deleteCredential(RoutingContext context)
   {
     try
     {
@@ -344,7 +348,7 @@ public class Credential
       }
       catch (Exception e)
       {
-        sendError(context, 400, "Wrong ID");
+        ApiUtils.sendError(context, 400, "Wrong ID");
 
         return;
       }
@@ -357,6 +361,7 @@ public class Credential
         .onSuccess(result ->
         {
           var resultArray = result.getJsonArray("result");
+
           if (SUCCESS.equals(result.getString(MSG)) && !resultArray.isEmpty())
           {
             context.response()
@@ -369,40 +374,20 @@ public class Credential
           }
           else
           {
-            sendError(context, 404, "Credential not found");
+            ApiUtils.sendError(context, 404, "Credential not found");
           }
         })
         .onFailure(err ->
         {
-          logger.error("Failed to delete credential {}: {}", id, err.getMessage(), err);
+          LOGGER.error("Failed to delete credential {}: {}", id, err.getMessage(), err);
 
-          sendError(context, 500, "Database error: " + err.getMessage());
+          ApiUtils.sendError(context, 500, "Database error: " + err.getMessage());
         });
     }
     catch (Exception e)
     {
-      logger.error(e.getMessage(), e);
+      LOGGER.error(e.getMessage(), e);
     }
 
-  }
-
-  /**
-   * Sends an error response to the client.
-   *
-   * @param ctx         The routing context.
-   * @param statusCode  The HTTP status code.
-   * @param errorMessage The error message.
-   */
-
-  private void sendError(RoutingContext ctx, int statusCode, String errorMessage)
-  {
-    logger.info(errorMessage);
-    ctx.response()
-      .setStatusCode(statusCode)
-      .putHeader("Content-Type", "application/json")
-      .end(new JsonObject()
-        .put(statusCode == 400 || statusCode == 409 ? "msg" : "status", "failed")
-        .put("error", errorMessage)
-        .encode());
   }
 }

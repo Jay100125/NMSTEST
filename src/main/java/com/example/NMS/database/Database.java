@@ -1,53 +1,69 @@
 package com.example.NMS.database;
 
 import com.example.NMS.constant.QueryConstant;
-import io.vertx.core.*;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.pgclient.PgBuilder;
-import io.vertx.pgclient.PgConnectOptions;
 import io.vertx.sqlclient.SqlClient;
-import io.vertx.sqlclient.PoolOptions;
 import io.vertx.sqlclient.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.List;
-import static com.example.NMS.constant.Constant.*;
 
-public class Database extends AbstractVerticle {
+import static com.example.NMS.constant.Constant.EVENTBUS_ADDRESS;
+import static com.example.NMS.constant.Constant.EVENTBUS_BATCH_ADDRESS;
 
-  private static final Logger logger = LoggerFactory.getLogger(Database.class);
+/**
+ * The Database verticle handles database operations by listening on the event bus.
+ * It uses a shared SqlClient instance obtained from DatabaseClient.
+ */
+public class Database extends AbstractVerticle
+{
+  private static final Logger LOGGER = LoggerFactory.getLogger(Database.class);
 
-  private static SqlClient client;
+  private SqlClient client; // Instance of the shared SQL client
 
   @Override
   public void start(Promise<Void> startPromise)
   {
-    var connectOptions = new PgConnectOptions()
-      .setHost(DB_HOST)
-      .setPort(DB_PORT)
-      .setDatabase(DB_NAME)
-      .setUser(DB_USER)
-      .setPassword(DB_PASSWORD);
+    // Get the shared SqlClient instance from DatabaseClient
+    // This ensures that all Database verticle instances share the same client and connection pool
+    client = DatabaseClient.getClient(vertx);
 
-    var poolOptions = new PoolOptions().setMaxSize(10);
+    // Initialize the database schema
+    initializeSchema()
+      .onSuccess(v ->
+      {
+        LOGGER.info("Database schema initialization successful.");
+        // Register event bus consumers after schema initialization
+        registerEventBusConsumers();
 
-    var sqlClient = PgBuilder
-      .client()
-      .with(poolOptions)
-      .connectingTo(connectOptions)
-      .using(vertx)
-      .build();
+        startPromise.complete();
 
-    client = sqlClient;
+        LOGGER.info("Database Verticle started and event bus consumers registered.");
+      })
+      .onFailure(err ->
+      {
+        LOGGER.error("Schema initialization failed: {}", err.getMessage(), err);
 
-    startPromise.complete();
+        startPromise.fail(err);
+      });
+  }
 
-    vertx.eventBus().consumer(EVENTBUS_ADDRESS, message ->
+  /**
+   * Registers consumers on the event bus to handle database queries.
+   */
+  private void registerEventBusConsumers()
+  {
+    // Consumer for single queries
+    vertx.eventBus().<JsonObject>localConsumer(EVENTBUS_ADDRESS, message ->
     {
-      JsonObject input = (JsonObject) message.body();
+      var input = message.body();
 
       var query = input.getString("query");
 
@@ -55,15 +71,16 @@ public class Database extends AbstractVerticle {
 
       var params = Tuple.tuple();
 
-      for (int i = 0; i < paramArray.size(); i++)
+      // Convert JsonArray params to Tuple
+      for (var i = 0; i < paramArray.size(); i++)
       {
-        Object value = paramArray.getValue(i);
+        var value = paramArray.getValue(i);
 
         if (value instanceof JsonArray jsonArray)
-        {
-          String[] s = new String[jsonArray.size()];
+        { // Handle array types for SQL (e.g., ANY($2::varchar[]))
+          var s = new String[jsonArray.size()];
 
-          for (int j = 0; j < jsonArray.size(); j++)
+          for (var j = 0; j < jsonArray.size(); j++)
           {
             s[j] = jsonArray.getString(j);
           }
@@ -75,33 +92,36 @@ public class Database extends AbstractVerticle {
         }
       }
 
-      client.preparedQuery(query).execute(params, ar -> {
+      LOGGER.debug("Executing query: {} with params: {}", query, params);
+
+      client.preparedQuery(query).execute(params, ar ->
+      {
         if (ar.succeeded())
         {
-          var rows = ar.result();
-
           var jsonRows = new JsonArray();
 
-          rows.forEach(row -> {
-
+          ar.result().forEach(row ->
+          {
             var obj = new JsonObject();
 
-            for (int i = 0; i < row.size(); i++)
+            for (var i = 0; i < row.size(); i++)
             {
-              String columnName = row.getColumnName(i);
+              var columnName = row.getColumnName(i);
 
-              Object columnValue = row.getValue(i);
+              var columnValue = row.getValue(i);
+              // Handle array types from database result
               if (columnValue != null && columnValue.getClass().isArray())
               {
-                Object[] array = (Object[]) columnValue;
+                var array = (Object[]) columnValue;
 
-                JsonArray jsonArray = new JsonArray();
+                var jsonArrayValue = new JsonArray();
 
-                for (Object item : array)
+                for (var item : array)
                 {
-                  jsonArray.add(item);
+                  jsonArrayValue.add(item);
                 }
-                obj.put(columnName, jsonArray);
+
+                obj.put(columnName, jsonArrayValue);
               }
               else
               {
@@ -111,200 +131,218 @@ public class Database extends AbstractVerticle {
             jsonRows.add(obj);
           });
 
-          message.reply(new JsonObject()
-            .put("msg", "Success")
-            .put("result", jsonRows));
+          LOGGER.debug("Query successful: {}, result size: {}", query, jsonRows.size());
+
+          message.reply(new JsonObject().put("msg", "Success").put("result", jsonRows));
         }
         else
         {
-          logger.error("❌ Query failed: {}", ar.cause().getMessage());
+          LOGGER.error("❌ Query failed: {}. Error: {}", query, ar.cause().getMessage(), ar.cause());
 
-          message.reply(new JsonObject()
-            .put("msg", "fail")
-            .put("ERROR", ar.cause().getMessage()));
+          message.reply(new JsonObject().put("msg", "fail").put("ERROR", ar.cause().getMessage()));
         }
       });
     });
 
-    vertx.eventBus().consumer(EVENTBUS_BATCH_ADDRESS, message -> {
+    // Consumer for batch queries
+    vertx.eventBus().<JsonObject>localConsumer(EVENTBUS_BATCH_ADDRESS, message ->
+    {
+      var request = message.body();
 
-      JsonObject request = (JsonObject) message.body();
+      var query = request.getString("query");
 
-      String query = request.getString("query");
-
-      JsonArray batchParams = request.getJsonArray("batchParams");
+      var batchParams = request.getJsonArray("batchParams");
 
       if (query == null || batchParams == null || batchParams.isEmpty())
       {
-        logger.error("Invalid batch request: query={}, batchParams={}", query, batchParams);
+        LOGGER.error("Invalid batch request: query={}, batchParams={}", query, batchParams);
 
-        message.reply(new JsonObject()
-          .put("msg", "Error")
-          .put("ERROR", "Missing query or batchParams"));
+        message.reply(new JsonObject().put("msg", "Error").put("ERROR", "Missing query or batchParams"));
+
         return;
       }
 
-      List<Tuple> batch = new ArrayList<>();
-
-      for (int i = 0; i < batchParams.size(); i++)
+      var batch = new ArrayList<Tuple>();
+      // Convert JsonArray of batch parameters to a List of Tuples
+      for (var i = 0; i < batchParams.size(); i++)
       {
-        JsonArray params = batchParams.getJsonArray(i);
-        Tuple tuple = Tuple.tuple();
+        var params = batchParams.getJsonArray(i);
 
-        if (query.equals(QueryConstant.INSERT_DISCOVERY_CREDENTIAL))
+        var tuple = Tuple.tuple();
+        // This part needs to be robust and handle different types and nulls correctly based on your specific queries
+        for (var j = 0; j < params.size(); j++)
         {
-          tuple.addLong(params.getLong(0)); // discovery_id
+          var value = params.getValue(j);
+          // Add specific type handling if necessary, e.g., for JSONB
+          if (query.equals(QueryConstant.INSERT_POLLED_DATA) && j == 2 && value instanceof String)
+          {
+            //  the third parameter for INSERT_POLLED_DATA is JSON data stored as a string
+            try
+            {
+              tuple.addJsonObject(new JsonObject((String) value));
+            }
+            catch (Exception e)
+            {
+              LOGGER.warn("Failed to parse string to JsonObject for batch query: {}, param index: {}, value: {}", query, j, value);
 
-          tuple.addLong(params.getLong(1)); // credential_profile_id
-        }
-        else if (query.equals(QueryConstant.INSERT_DISCOVERY_RESULT))
-        {
-          tuple.addLong(params.getLong(0)); // discovery_id
-
-          tuple.addString(params.getString(1)); // ip
-
-          tuple.addInteger(params.getInteger(2)); // port
-
-          tuple.addString(params.getString(3)); // result
-
-          tuple.addString(params.getString(4)); // msg (nullable)
-
-          Object credId = params.getValue(5); // credential_profile_id (nullable)
-
-          tuple.addLong(credId instanceof Number ? ((Number) credId).longValue() : null);
-        }
-        else if (query.equals(QueryConstant.INSERT_DEFAULT_METRICS) ||
-                   query.equals(QueryConstant.UPSERT_METRICS))
-        {
-          tuple.addLong(params.getLong(0)); // provisioning_job_id
-
-          tuple.addString(params.getString(1)); // metric_name
-
-          tuple.addInteger(params.getInteger(2)); // polling_interval
-        }
-        else if (query.equals(QueryConstant.INSERT_POLLING_RESULT))
-        {
-          tuple.addLong(params.getLong(0)); // provisioning_job_id
-
-          tuple.addString(params.getString(1)); // metric_name
-
-          tuple.addJsonObject(params.getJsonObject(2)); // value
-        }
-        else if (query.equals(QueryConstant.INSERT_PROVISIONING_JOB))
-        {
-          tuple.addLong(params.getLong(0));
-
-          tuple.addString(params.getString(1)); // ip
-
-          tuple.addInteger(params.getInteger(2)); // port
-        }
-        else if (query.equals(QueryConstant.INSERT_POLLED_DATA))
-        {
-          tuple.addLong(params.getLong(0));
-
-          tuple.addString(params.getString(1)); // metric_name
-
-          tuple.addJsonObject(params.getJsonObject(2)); // value
-        }
-        else
-        {
-          logger.error("Unsupported batch query: {}", query);
-
-          message.reply(new JsonObject()
-            .put("msg", "Error")
-            .put("ERROR", "Unsupported batch query: " + query));
-
-          return;
+              tuple.addValue(null); // Or handle error appropriately
+            }
+          }
+          else if (value instanceof JsonObject || value instanceof JsonArray)
+          {
+            tuple.addValue(value); // Directly add JsonObject/JsonArray
+          }
+          else
+          {
+            tuple.addValue(value);
+          }
         }
         batch.add(tuple);
       }
 
-      logger.info("Executing batch query: {}, tuples: {}", query, batch.size());
+      LOGGER.debug("Executing batch query: {}, number of tuples: {}", query, batch.size());
 
-      client.preparedQuery(query)
-        .executeBatch(batch)
-        .onSuccess(result ->
+      client.preparedQuery(query).executeBatch(batch, ar -> {
+
+        if (ar.succeeded())
         {
-          logger.info("Batch insert executed, inserted {} rows", batch.size());
+          var insertedIds = new JsonArray();
+          // Assuming all batch queries that return IDs have an 'id' column
+          // You might need to adjust this if your returning columns differ
+          try
+          {
+            ar.result().forEach(row ->
+            {
+              if (row != null && row.size() > 0 && (row.getColumnIndex("id") != -1))
+              {
+                insertedIds.add(row.getLong("id"));
+              }
+              else if (row != null && row.size() > 0 && (row.getColumnIndex("metric_id") != -1))
+              { // For UPSERT_METRICS
+                insertedIds.add(row.getLong("metric_id"));
+              }
+            });
+          }
+          catch (Exception e)
+          {
+            LOGGER.warn("Could not extract all IDs from batch result for query {}: {}", query, e.getMessage());
+          }
 
-          JsonArray insertedIds = new JsonArray();
+          LOGGER.debug("Batch query successful: {}, affected rows: {}", query, ar.result().rowCount());
 
-          result.forEach(row -> insertedIds.add(row.getLong("id")));
+          message.reply(new JsonObject().put("msg", "Success").put("insertedIds", insertedIds).put("rowCount", ar.result().rowCount()));
+        }
+        else
+        {
+          LOGGER.error("❌ Batch query failed: {}. Error: {}", query, ar.cause().getMessage(), ar.cause());
 
-          message.reply(new JsonObject()
-            .put("msg", "Success")
-            .put("insertedIds", insertedIds));
-        })
-        .onFailure(err -> {
-          logger.warn("Batch insert failed: {}, error: {}", query, err.getMessage());
-
-          message.reply(new JsonObject()
-            .put("msg", "Error")
-            .put("ERROR", err.getMessage()));
-        });
+          message.reply(new JsonObject().put("msg", "Error").put("ERROR", ar.cause().getMessage()));
+        }
+      });
     });
   }
-}
 
-//    vertx.eventBus().consumer(EVENTBUS_BATCH_ADDRESS, message -> {
-//      JsonObject request = (JsonObject) message.body();
-//      String query = request.getString("query");
-//      JsonArray batchParams = request.getJsonArray("batchParams");
-//
-//      if (query == null || batchParams == null || batchParams.isEmpty()) {
-//        logger.error("Invalid batch request: query={}, batchParams={}", query, batchParams);
-//        message.reply(new JsonObject()
-//          .put("msg", "Error")
-//          .put("ERROR", "Missing query or batchParams"));
-//        return;
-//      }
-//
-//      List<Tuple> batch = new ArrayList<>();
-//      for (int i = 0; i < batchParams.size(); i++) {
-//        JsonArray params = batchParams.getJsonArray(i);
-//        Tuple tuple = Tuple.tuple();
-//
-//        if (query.equals(QueryConstant.INSERT_DISCOVERY_CREDENTIAL)) {
-//          // Handle discovery_credential_mapping: discovery_id, credential_profile_id
-//          tuple.addLong(params.getLong(0)); // discovery_id
-//          tuple.addLong(params.getLong(1)); // credential_profile_id
-//        } else if (query.equals(QueryConstant.INSERT_DISCOVERY_RESULT)) {
-//          // Handle discovery_result: discovery_id, ip, port, result, msg, credential_profile_id
-//          tuple.addLong(params.getLong(0)); // discovery_id
-//          tuple.addString(params.getString(1)); // ip
-//          tuple.addInteger(params.getInteger(2)); // port
-//          tuple.addString(params.getString(3)); // result
-//          tuple.addString(params.getString(4)); // msg (nullable)
-//          Object credId = params.getValue(5); // credential_profile_id (nullable)
-//          tuple.addLong(credId instanceof Number ? ((Number) credId).longValue() : null);
-//        } else {
-//          logger.error("Unsupported batch query: {}", query = null);
-//          logger.error("Unsupported batch query: {}", query);
-//          message.reply(new JsonObject()
-//            .put("msg", "Error")
-//            .put("ERROR", "Unsupported batch query: " + query));
-//          return;
-//        }
-//        batch.add(tuple);
-//      }
-//
-//      logger.debug("Executing batch query: {}, tuples: {}", query, batch.size());
-//      String finalQuery = query;
-//      client.preparedQuery(query)
-//        .executeBatch(batch)
-//        .onSuccess(result -> {
-//          logger.info("Batch insert executed, inserted {} rows", batch.size());
-//          JsonArray insertedIds = new JsonArray();
-//          result.forEach(row -> insertedIds.add(row.getLong("id")));
-//          message.reply(new JsonObject()
-//            .put("msg", "Success")
-//            .put("insertedIds", insertedIds));
-//        })
-//        .onFailure(err -> {
-//          logger.error("Batch insert failed: {}, error: {} ", finalQuery, err.getMessage());
-//          message.reply(new JsonObject()
-//            .put("msg", "Error")
-//            .put("ERROR", err.getMessage()));
-//        });
-//    });
-//  }
+  /**
+   * Initializes the database schema by executing SQL commands from a schema file.
+   *
+   * @return A Future that completes when schema initialization is done or fails.
+   */
+  private Future<Void> initializeSchema()
+  {
+    Promise<Void> promise = Promise.promise();
+    // Using executeBlocking as schema loading might involve file I/O
+    vertx.executeBlocking(blockingPromise ->
+    {
+      try
+      {
+        // Load schema.sql from resources
+        // 'schema.sql' is in src/main/resources directory
+        var inputStream = getClass().getResourceAsStream("/schema.sql");
+
+        if (inputStream == null)
+        {
+          LOGGER.error("schema.sql not found in resources.");
+
+          blockingPromise.fail("schema.sql not found in resources.");
+
+          return;
+        }
+
+        var schema = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+
+        inputStream.close();
+
+        // Split schema into individual DDL statements
+        var ddlStatements = schema.split(";");
+
+        var executionFutures = new ArrayList<Future<Void>>();
+
+        for (var statement : ddlStatements)
+        {
+          var trimmedStatement = statement.trim();
+
+          if (!trimmedStatement.isEmpty())
+          {
+            // Execute each DDL statement
+            Promise<Void> statementPromise = Promise.promise();
+
+            LOGGER.debug("Executing DDL: {}", trimmedStatement);
+
+            client.query(trimmedStatement).execute()
+              .onSuccess(res ->
+              {
+                LOGGER.debug("Successfully executed DDL: {}", trimmedStatement);
+
+                statementPromise.complete();
+              })
+              .onFailure(err -> {
+
+                LOGGER.error("Failed to execute DDL: {} - Error: {}", trimmedStatement, err.getMessage(), err);
+
+                statementPromise.fail(err);
+              });
+            executionFutures.add(statementPromise.future());
+          }
+        }
+
+        // Wait for all DDL statements to complete
+        CompositeFuture.all(new ArrayList<>(executionFutures))
+          .onSuccess(v -> {
+            LOGGER.info("All DDL statements processed.");
+
+            blockingPromise.complete();
+          })
+          .onFailure(err -> {
+            LOGGER.error("Error processing DDL statements: {}", err.getMessage(), err);
+
+            blockingPromise.fail(err);
+          });
+
+      }
+      catch (Exception e)
+      {
+        LOGGER.error("Failed to read or process schema.sql: {}", e.getMessage(), e);
+
+        blockingPromise.fail(e);
+      }
+    }, res -> {
+      if (res.succeeded())
+      {
+        promise.complete();
+      }
+      else
+      {
+        promise.fail(res.cause());
+      }
+    });
+    return promise.future();
+  }
+
+  @Override
+  public void stop(Promise<Void> stopPromise)
+  {
+    LOGGER.info("Database Verticle stopped.");
+
+    stopPromise.complete();
+  }
+}
