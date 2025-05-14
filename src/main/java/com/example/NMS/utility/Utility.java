@@ -10,11 +10,14 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashSet;
+import java.util.List;
 
 public class Utility
 {
-  public static final Logger logger = LoggerFactory.getLogger(Utility.class.getName());
+  public static final Logger LOGGER = LoggerFactory.getLogger(Utility.class.getName());
 
   private static final String IPv4_PATTERN = "^((25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)(\\.|$)){4}$";
 
@@ -153,7 +156,7 @@ public class Utility
 
       var process = pb.start();
 
-      logger.info("Ip {} fping command: {}", ipList, String.join(" ", command));
+      LOGGER.info("Ip {} fping command: {}", ipList, String.join(" ", command));
       // Read alive IPs from stdout
       var reader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
 
@@ -174,9 +177,9 @@ public class Utility
 //          logger.info("fping alive IP: {}", ip);
 //
 //        }
-      logger.info("fping alive IPs: {}", aliveIps);
+      LOGGER.info("fping alive IPs: {}", aliveIps);
 
-      logger.info("FPING command: {}", String.join(" ", command));
+      LOGGER.info("FPING command: {}", String.join(" ", command));
       // Log stderr for debugging
 
       var stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
@@ -190,19 +193,19 @@ public class Utility
 
       if (!stderr.isEmpty())
       {
-        logger.debug("fping stderr: {}", stderr);
+        LOGGER.debug("fping stderr: {}", stderr);
       }
 
       var exitCode = process.waitFor();
 
       if (exitCode != 0 && aliveIps.isEmpty())
       {
-        logger.warn("fping exited with code {} and no alive IPs", exitCode);
+        LOGGER.warn("fping exited with code {} and no alive IPs", exitCode);
       }
     }
     catch (Exception e)
     {
-      logger.error("Error running fping: {}", e.getMessage());
+      LOGGER.error("Error running fping: {}", e.getMessage());
 
 //        throw e; // Let caller handle
     }
@@ -227,18 +230,18 @@ public class Utility
 
           isPortOpen = exitCode == 0;
 
-          logger.debug("Port check for IP {} on port {}: {}", ip, port, isPortOpen ? "open" : "closed");
+          LOGGER.debug("Port check for IP {} on port {}: {}", ip, port, isPortOpen ? "open" : "closed");
         }
         catch (Exception e)
         {
-          logger.error("Error checking port {} for IP {}: {}", port, ip, e.getMessage());
+          LOGGER.error("Error checking port {} for IP {}: {}", port, ip, e.getMessage());
 
           isPortOpen = false;
         }
       }
       else
       {
-        logger.debug("IP {} is not reachable, skipping port check", ip);
+        LOGGER.debug("IP {} is not reachable, skipping port check", ip);
       }
       results.add(new JsonObject()
         .put("ip", ip)
@@ -246,7 +249,7 @@ public class Utility
         .put("port_open", isPortOpen));
     }
 
-    logger.info("Reachability results: {}", results.encode());
+    LOGGER.info("Reachability results: {}", results.encode());
 
     return results;
   }
@@ -263,7 +266,7 @@ public class Utility
 
     OutputStreamWriter stdOutput = null;
 
-    logger.info("-----------------------------------------------------------");
+    LOGGER.info("-----------------------------------------------------------");
 
     try
     {
@@ -300,7 +303,7 @@ public class Utility
         }
         catch (Exception e)
         {
-          logger.error("Failed to decode stdout line '{}': {}", line, e.getMessage());
+          LOGGER.error("Failed to decode stdout line '{}': {}", line, e.getMessage());
         }
       }
 
@@ -319,7 +322,7 @@ public class Utility
 
       if (exitCode != 0)
       {
-        logger.warn("SSH plugin exited with code {}", exitCode);
+        LOGGER.warn("SSH plugin exited with code {}", exitCode);
 
         if (results.isEmpty())
         {
@@ -340,7 +343,7 @@ public class Utility
     }
     catch (Exception e)
     {
-      logger.error("Error running SSH plugin: {}", e.getMessage());
+      LOGGER.error("Error running SSH plugin: {}", e.getMessage());
 
       results.add(new JsonObject()
         .put("status", "failed")
@@ -371,7 +374,7 @@ public class Utility
       }
       catch (Exception e)
       {
-        logger.error("Error cleaning up SSH plugin process: {}", e.getMessage());
+        LOGGER.error("Error cleaning up SSH plugin process: {}", e.getMessage());
       }
     }
     return results;

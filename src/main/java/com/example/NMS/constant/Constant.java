@@ -12,19 +12,23 @@ public class Constant {
 
   public static final String DB_PASSWORD = "Mind@123";
 
+  public static final int SERVER_PORT = 8080;
+
+  public static final int MAX_WORKER_EXECUTION_TIME = 900;
+
   public static final String JWT_SECRET = "MySecretKey";
 
-  public static final String EVENTBUS_ADDRESS = "DATABASE";
+  public static final String DB_EXECUTE_QUERY = "db.execute.query";
 
-  public static final String EVENTBUS_BATCH_ADDRESS = "DATABASE_BATCH";
+  public static final String DB_EXECUTE_BATCH_QUERY = "db.execute.batch.query";
+
+  public static final String DISCOVERY_RUN = "discovery.run";
 
   public static final String SUCCESS = "Success";
 
-  public static final String WINDOWS = "windows";
+  public static final String USERNAME = "username";
 
-  public static final String LINUX = "linux";
-
-  public static final String SNMP = "snmp";
+  public static final String RESULT = "result";
 
   public static final String CREDENTIAL_NAME = "credential_name";
 
@@ -42,7 +46,7 @@ public class Constant {
 
   public static final String BATCHPARAMS = "batchParams";
 
-  public static final String MSG = "msg";
+  public static final String MESSAGE = "message";
 
   public static final String ERROR = "error";
 
@@ -58,5 +62,20 @@ public class Constant {
 
   public static final String SELECTED_IPS = "selected_ips";
 
+  public static final String PROVISIONING_JOB_ID = "provisioning_job_id";
+
+  public static final String METRIC_ID = "metric_id";
+
+  public static final String METRIC_NAME = "metric_name";
+
+  public static final String POLLING_INTERVAL = "polling_interval";
+
+  public static final String ORIGINAL_INTERVAL = "original_interval";
+
+  public static final String REMAINING_TIME = "remaining_time";
+
+  public static final String IP = "ip";
+
+  public static final String IS_ENABLED = "is_enabled";
 
 }

@@ -6,6 +6,8 @@ public class QueryConstant
 
   public static final String GET_CREDENTIAL_BY_ID = "SELECT * FROM credential_profile WHERE id = $1";
 
+  public static final String GET_CREDENTIAL_DATA = "SELECT cred_data FROM credential_profile WHERE id = $1";
+
   public static final String INSERT_CREDENTIAL = "INSERT INTO credential_profile (credential_name, system_type, cred_data) VALUES ($1, $2, $3) returning id";
 
   public static final String UPDATE_CREDENTIAL = "UPDATE credential_profile\n" +
@@ -56,21 +58,17 @@ public class QueryConstant
   public static final String INSERT_PROVISIONING_JOB = "INSERT INTO provisioning_jobs (credential_profile_id, ip, port) " +
     "VALUES ($1, $2, $3) RETURNING id";
 
-  public static final String INSERT_DEFAULT_METRICS = "INSERT INTO metrics (provisioning_job_id, name, polling_interval) " +
-    "VALUES ($1, $2, $3) returning metric_id as id";
+  public static final String INSERT_DEFAULT_METRICS =
+    "INSERT INTO metrics (provisioning_job_id, name, polling_interval, is_enabled) " +
+      "VALUES ($1, $2, $3, $4) RETURNING metric_id as id";
 
-  public static final String DELETE_STALE_METRICS =
-    "DELETE FROM metrics " +
-      "WHERE provisioning_job_id = $1 " +
-      "AND name NOT IN (SELECT UNNEST($2::varchar[])::metric_name) returning provisioning_job_id as id";
-
-  public static final String UPSERT_METRICS = """
-            INSERT INTO metrics (provisioning_job_id, name, polling_interval)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (provisioning_job_id, name)
-            DO UPDATE SET polling_interval = EXCLUDED.polling_interval
-            RETURNING metric_id as id""";
-
+  public static final String UPSERT_METRICS =
+    "INSERT INTO metrics (provisioning_job_id, name, polling_interval, is_enabled) " +
+      "VALUES ($1, $2, COALESCE($3, 300), $4) " +
+      "ON CONFLICT (provisioning_job_id, name) " +
+      "DO UPDATE SET polling_interval = COALESCE(EXCLUDED.polling_interval, metrics.polling_interval), " +
+      "is_enabled = EXCLUDED.is_enabled " +
+      "RETURNING metric_id as id";
 
   public static final String INSERT_POLLED_DATA =
     "INSERT INTO polled_data (job_id, metric_type, data) " +
@@ -94,16 +92,26 @@ public class QueryConstant
 
   public static final String GET_USER_BY_USERNAME = "SELECT id, username, password FROM users WHERE username = $1";
 
-  public static final String VALIDATE_DISCOVERY_FROM_RESULT = "SELECT ip, result, credential_profile_id, port" +
-    "FROM discovery_result WHERE discovery_id = $1 AND ip = ANY($2::varchar[])";
+  public static final String GET_BY_RUN_ID =
+    """
+                  SELECT
+                  dp.id AS id,
+                  dp.discovery_profile_name AS name,
+                  dp.ip AS ip,
+                  dp.status AS status,
+                  dp.port AS port,
+                  ARRAY_AGG(
+                      JSON_BUILD_OBJECT(
+                          'id', cp.id,
+                          'username', cp.cred_data->>'user',
+                          'password', cp.cred_data->>'password'
+                      )
+                  ) AS credential
+              FROM discovery_profiles dp
+              LEFT JOIN discovery_credential_mapping dc ON dp.id = dc.discovery_id
+              LEFT JOIN credential_profile cp ON dc.credential_profile_id = cp.id
+              WHERE dp.id = $1
+              GROUP BY dp.id, dp.discovery_profile_name, dp.ip, dp.status, dp.port;""";
 
-  public static final String GET_METRICS_BY_PROVISIONING_JOB = "SELECT * FROM metrics WHERE provisioning_job_id = $1";
-
-  public static final String INSERT_POLLING_RESULT = "INSERT INTO polling_results (provisioning_job_id, name, value) " +
-    "VALUES ($1, $2, $3) RETURNING id";
-
-  public static final String VALIDATE_PROVISIONING_JOB =
-    "SELECT id FROM provisioning_jobs WHERE id = $1";
-
-
+  public static final String GET_DISCOVERY_RESULTS = "SELECT * FROM discovery_result WHERE discovery_id = $1";
 }

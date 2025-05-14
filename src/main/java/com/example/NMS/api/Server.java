@@ -1,9 +1,11 @@
-package com.example.NMS;
+package com.example.NMS.api;
 
-import com.example.NMS.api.Auth;
-import com.example.NMS.api.Credential;
-import com.example.NMS.api.Discovery;
-import com.example.NMS.api.Provision;
+import com.example.NMS.api.handlers.Auth;
+import com.example.NMS.api.handlers.Credential;
+//import com.example.NMS.api.handlers.Discovery;
+//import com.example.NMS.api.handlers.Provision;
+import com.example.NMS.api.handlers.Discovery;
+import com.example.NMS.api.handlers.Provision;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
@@ -16,7 +18,7 @@ import io.vertx.ext.web.handler.JWTAuthHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.example.NMS.constant.Constant.JWT_SECRET;
+import static com.example.NMS.constant.Constant.*;
 
 
 public class Server extends AbstractVerticle
@@ -27,7 +29,7 @@ public class Server extends AbstractVerticle
   public void start(Promise<Void> startPromise)
   {
 
-    JWTAuth jwtAuth = JWTAuth.create(vertx, new JWTAuthOptions()
+    var jwtAuth = JWTAuth.create(vertx, new JWTAuthOptions()
       .addPubSecKey(new PubSecKeyOptions()
         .setAlgorithm("HS256")
         .setBuffer(JWT_SECRET)));
@@ -69,9 +71,9 @@ public class Server extends AbstractVerticle
     new Auth(jwtAuth).init(authRoute);
 
     new Credential().init(credentialRoute);
-
+//
     new Discovery().init(discoveryRoute);
-
+//
     new Provision().init(provisionRoute);
 
     router.errorHandler(401, ctx -> {
@@ -79,13 +81,13 @@ public class Server extends AbstractVerticle
         .setStatusCode(401)
         .putHeader("Content-Type", "application/json")
         .end(new JsonObject()
-          .put("error", "Unauthorized")
-          .put("message", "Invalid or missing JWT token")
+          .put(ERROR, "Unauthorized")
+          .put(MESSAGE, "Invalid or missing JWT token")
           .encode());
     });
 
     vertx.createHttpServer().requestHandler(router)
-      .listen(8080)
+      .listen(SERVER_PORT)
       .onComplete(handler ->
       {
         if (handler.succeeded())

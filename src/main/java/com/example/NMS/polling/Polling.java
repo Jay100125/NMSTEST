@@ -1,11 +1,12 @@
 
 package com.example.NMS.polling;
 
-import com.example.NMS.MetricJobCache;
+import com.example.NMS.cache.MetricCache;
 import com.example.NMS.constant.QueryConstant;
 import com.example.NMS.service.QueryProcessor;
 import com.example.NMS.utility.Utility;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -14,7 +15,9 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+
+import static com.example.NMS.constant.Constant.BATCHPARAMS;
+import static com.example.NMS.constant.Constant.QUERY;
 
 public class Polling extends AbstractVerticle
 {
@@ -24,20 +27,33 @@ public class Polling extends AbstractVerticle
   private static final int TIMER_INTERVAL_SECONDS = 10;
 
   @Override
-  public void start()
+  public void start(Promise<Void> startPromise)
   {
-    // Initialize the cache
-    MetricJobCache.refreshCache(vertx);
+    try
+    {
+      // Initialize the cache
+      MetricCache.init();
 
-    vertx.setPeriodic(TIMER_INTERVAL_SECONDS * 1000, this::handlePolling);
+      // Set up periodic polling
+      vertx.setPeriodic(TIMER_INTERVAL_SECONDS * 1000, this::handlePolling);
 
-    LOGGER.info("PollingVerticle started with timer interval {} seconds", TIMER_INTERVAL_SECONDS);
+      LOGGER.info("PollingVerticle started with timer interval {} seconds", TIMER_INTERVAL_SECONDS);
+
+      // Signal successful deployment
+      startPromise.complete();
+    }
+    catch (Exception exception)
+    {
+      LOGGER.error("Failed to start PollingVerticle", exception);
+
+      startPromise.fail(exception);
+    }
   }
 
   // Handle periodic polling
   private void handlePolling(Long timerId)
   {
-    var jobsToPoll = MetricJobCache.handleTimer();
+    var jobsToPoll = MetricCache.handleTimer();
 
     if (!jobsToPoll.isEmpty())
     {
@@ -140,8 +156,6 @@ public class Polling extends AbstractVerticle
     {
       var resultObj = (JsonObject) result;
 
-//      logger.info("Result: {}", resultObj.encodePrettily());
-
       if ("success".equals(resultObj.getString("status")))
       {
         var jobId = resultObj.getLong("provision_profile_id");
@@ -162,8 +176,8 @@ public class Polling extends AbstractVerticle
     if (batchParams.isEmpty()) return;
 
     var batchQuery = new JsonObject()
-      .put("query", QueryConstant.INSERT_POLLED_DATA)
-      .put("batchParams", batchParams);
+      .put(QUERY, QueryConstant.INSERT_POLLED_DATA)
+      .put(BATCHPARAMS, batchParams);
 
     QueryProcessor.executeBatchQuery(batchQuery)
       .onSuccess(r -> LOGGER.info("Stored {} metrics", batchParams.size()))
