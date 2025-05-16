@@ -66,7 +66,7 @@ public class Credential
         return;
       }
 
-
+      // insert our data to credential table
       var insertQuery = new JsonObject()
         .put(QUERY, INSERT_CREDENTIAL)
         .put(PARAMS, new JsonArray().add(credentialName).add(systemType).add(credentialData));
@@ -109,9 +109,9 @@ public class Credential
           }
         });
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
-      LOGGER.error(e.getMessage(), e);
+      LOGGER.error(exception.getMessage(), exception);
     }
   }
 
@@ -139,18 +139,20 @@ public class Credential
       if (body == null || body.isEmpty())
       {
         ApiUtils.sendError(context, 400, "Missing or invalid data");
+
         return;
       }
 
-      // Validate sys_type if provided
+      // Validate system_type if provided
       var systemType = body.getString(SYSTEM_TYPE);
 
-      // Validate cred_data if provided
+      // Validate credential_data if provided
       var credentialData = body.getJsonObject(CRED_DATA);
 
       if (credentialData != null && (!credentialData.containsKey(USER) || !credentialData.containsKey(PASSWORD)))
       {
         ApiUtils.sendError(context, 400, "cred_data must contain user and password");
+
         return;
       }
 

@@ -16,6 +16,8 @@ public class Constant {
 
   public static final int MAX_WORKER_EXECUTION_TIME = 900;
 
+  public static final int TIMER_INTERVAL_SECONDS = 10;
+
   public static final String JWT_SECRET = "MySecretKey";
 
   public static final String DB_EXECUTE_QUERY = "db.execute.query";
@@ -24,7 +26,9 @@ public class Constant {
 
   public static final String DISCOVERY_RUN = "discovery.run";
 
-  public static final String SUCCESS = "Success";
+  public static final String POLLING_BATCH_PROCESS = "polling.batch.process";
+
+  public static final String SUCCESS = "success";
 
   public static final String USERNAME = "username";
 
@@ -79,3 +83,5 @@ public class Constant {
   public static final String IS_ENABLED = "is_enabled";
 
 }
+
+

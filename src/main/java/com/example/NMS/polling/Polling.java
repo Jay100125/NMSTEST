@@ -15,29 +15,42 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
-import static com.example.NMS.constant.Constant.BATCHPARAMS;
-import static com.example.NMS.constant.Constant.QUERY;
+import static com.example.NMS.constant.Constant.*;
 
 public class Polling extends AbstractVerticle
 {
   private static final Logger LOGGER = LoggerFactory.getLogger(Polling.class);
-
-  // Timer interval (seconds) for polling
-  private static final int TIMER_INTERVAL_SECONDS = 10;
 
   @Override
   public void start(Promise<Void> startPromise)
   {
     try
     {
-      // Initialize the cache
-      MetricCache.init();
+      // Set up event bus consumer for polling jobs
+      vertx.eventBus().<JsonArray>localConsumer(POLLING_BATCH_PROCESS, message -> {
 
-      // Set up periodic polling
-      vertx.setPeriodic(TIMER_INTERVAL_SECONDS * 1000, this::handlePolling);
+        var jobs = message.body();
 
-      LOGGER.info("PollingVerticle started with timer interval {} seconds", TIMER_INTERVAL_SECONDS);
+        if (!jobs.isEmpty())
+        {
+          LOGGER.info("Received {} jobs for polling", jobs.size());
+
+
+          var jobsToPoll = jobs.stream()
+            .map(obj -> (JsonObject) obj)
+            .collect(Collectors.toList());
+
+          pollJobs(jobsToPoll);
+        }
+        else
+        {
+          LOGGER.debug("Received empty job list for polling");
+        }
+      });
+
+      LOGGER.info("PollingVerticle started");
 
       // Signal successful deployment
       startPromise.complete();
@@ -50,16 +63,6 @@ public class Polling extends AbstractVerticle
     }
   }
 
-  // Handle periodic polling
-  private void handlePolling(Long timerId)
-  {
-    var jobsToPoll = MetricCache.handleTimer();
-
-    if (!jobsToPoll.isEmpty())
-    {
-      pollJobs(jobsToPoll);
-    }
-  }
 
   // Poll the collected jobs
   private void pollJobs(List<JsonObject> jobs)
@@ -71,7 +74,7 @@ public class Polling extends AbstractVerticle
 
       for (var job : jobs)
       {
-        var deviceKey = job.getString("ip") + ":" + job.getJsonObject("cred_data").encode();
+        var deviceKey = job.getString(IP) + ":" + job.getJsonObject(CRED_DATA).encode();
 
         jobsByDevice.computeIfAbsent(deviceKey, k -> new ArrayList<>()).add(job);
       }
@@ -91,24 +94,24 @@ public class Polling extends AbstractVerticle
 
         if (res.getBoolean("reachable") && res.getBoolean("port_open"))
         {
-          var ip = res.getString("ip");
+          var ip = res.getString(IP);
 
           jobsByDevice.forEach((deviceKey, jobList) ->
           {
             if (deviceKey.startsWith(ip + ":"))
             {
               var metrics = jobList.stream()
-                .map(job -> job.getString("metric_name"))
+                .map(job -> job.getString(METRIC_NAME))
                 .toList();
 
               var sampleJob = jobList.get(0); // All jobs in list have same IP/cred
 
               targets.add(new JsonObject()
                 .put("ip.address", ip)
-                .put("port", sampleJob.getInteger("port"))
-                .put("user", sampleJob.getJsonObject("cred_data").getString("user"))
-                .put("password", sampleJob.getJsonObject("cred_data").getString("password"))
-                .put("provision_profile_id", sampleJob.getLong("provisioning_job_id"))
+                .put(PORT, sampleJob.getInteger(PORT))
+                .put(USER, sampleJob.getJsonObject(CRED_DATA).getString(USER))
+                .put(PASSWORD, sampleJob.getJsonObject(CRED_DATA).getString(PASSWORD))
+                .put(PROVISIONING_JOB_ID, sampleJob.getLong(PROVISIONING_JOB_ID))
                 .put("metric_type", new JsonArray(metrics)));
             }
           });
@@ -130,7 +133,7 @@ public class Polling extends AbstractVerticle
       {
         LOGGER.info("Plugin input: {}", pluginInput.encodePrettily());
 
-        JsonArray results = Utility.spawnPlugin(pluginInput);
+        var results = Utility.spawnPlugin(pluginInput);
 
         LOGGER.info("Plugin result: {}", results.encodePrettily());
 
@@ -139,9 +142,9 @@ public class Polling extends AbstractVerticle
         promise.complete();
       }, false);
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
-      LOGGER.error("Polling failed: {}", e.getMessage());
+      LOGGER.error("Polling failed: {}", exception.getMessage());
     }
   }
 
@@ -158,7 +161,7 @@ public class Polling extends AbstractVerticle
 
       if ("success".equals(resultObj.getString("status")))
       {
-        var jobId = resultObj.getLong("provision_profile_id");
+        var jobId = resultObj.getLong(PROVISIONING_JOB_ID);
 
         var data = resultObj.getJsonObject("data");
 

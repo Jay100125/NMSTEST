@@ -60,48 +60,17 @@ public class Discovery
 
       var discoveryName = body.getString(DISCOVERY_PROFILE_NAME);
 
-      var credentialIdsArray = body.getJsonArray(CREDENTIAL_PROFILE_ID);
+      var credentialIds = body.getJsonArray(CREDENTIAL_PROFILE_ID);
 
       var ip = body.getString(IP_ADDRESS);
 
-      var portStr = body.getString(PORT);
+      var port = body.getInteger(PORT);
 
-      if (discoveryName.isEmpty() || credentialIdsArray.isEmpty() || ip.isEmpty() || portStr.isEmpty())
+      if (discoveryName.isEmpty() || credentialIds.isEmpty() || ip.isEmpty() || port <= 0 || port >= 65536)
       {
-        ApiUtils.sendError(context, 400, "missing field or invalid data");
+        ApiUtils.sendError(context, 400, "Missing field or invalid data");
 
         return;
-      }
-
-      int port;
-
-      try
-      {
-        port = Integer.parseInt(portStr);
-      }
-      catch (Exception e)
-      {
-        ApiUtils.sendError(context, 400, "Invalid port");
-
-        return;
-      }
-
-      var credentialIds = new JsonArray();
-
-      for (var i = 0; i < credentialIdsArray.size(); i++)
-      {
-        try
-        {
-          var credentialId = Long.parseLong(credentialIdsArray.getString(i));
-
-          credentialIds.add(credentialId);
-        }
-        catch (Exception e)
-        {
-          ApiUtils.sendError(context, 400, "Invalid credential_profile_id: " + credentialIdsArray.getString(i));
-
-          return;
-        }
       }
 
       // Insert discovery profile into database.
@@ -134,14 +103,25 @@ public class Discovery
             .map(discoveryId);
 
         })
-        .onSuccess(discoveryId -> context.response()
-          .setStatusCode(201)
-          .putHeader("Content-Type", "application/json")
-          .end(new JsonObject()
-            .put(MESSAGE, SUCCESS)
-            .put(ID, discoveryId)
-            .encodePrettily()))
-        .onFailure(err -> ApiUtils.sendError(context, 500, "Failed to create discovery: " + err.getMessage()));
+        .onComplete(queryResult ->
+        {
+          if (queryResult.succeeded())
+          {
+            var discoveryId = queryResult.result();
+
+            context.response()
+              .setStatusCode(201)
+              .putHeader("Content-Type", "application/json")
+              .end(new JsonObject()
+                .put(MESSAGE, SUCCESS)
+                .put(ID, discoveryId)
+                .encodePrettily());
+          }
+          else
+          {
+            ApiUtils.sendError(context, 500, "Failed to create discovery: " + queryResult.cause().getMessage());
+          }
+        });
     }
     catch (Exception e)
     {
@@ -304,9 +284,9 @@ public class Discovery
           }
         });
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
-      LOGGER.error("Error deleting discovery: {}", e.getMessage());
+      LOGGER.error("Error deleting discovery: {}", exception.getMessage());
 
       ApiUtils.sendError(context, 500, "Internal server error");
     }
@@ -340,48 +320,17 @@ public class Discovery
 
       var discoveryName = body.getString(DISCOVERY_PROFILE_NAME);
 
-      var credIdsArray = body.getJsonArray(CREDENTIAL_PROFILE_ID);
+      var credentialIds = body.getJsonArray(CREDENTIAL_PROFILE_ID);
 
       var ip = body.getString(IP_ADDRESS);
 
-      var portStr = body.getString(PORT);
+      var port = body.getInteger(PORT);
 
-      if (discoveryName == null || credIdsArray == null || ip == null || portStr == null)
+      if (discoveryName == null || credentialIds == null || ip == null || port == null)
       {
         ApiUtils.sendError(context, 400, "Missing required fields");
 
         return;
-      }
-
-      int port;
-
-      try
-      {
-        port = Integer.parseInt(portStr);
-      }
-      catch (Exception e)
-      {
-        ApiUtils.sendError(context, 400, "Invalid port");
-
-        return;
-      }
-
-      var credIds = new JsonArray();
-
-      for (var i = 0; i < credIdsArray.size(); i++)
-      {
-        try
-        {
-          var credId = Long.parseLong(credIdsArray.getString(i));
-
-          credIds.add(credId);
-        }
-        catch (Exception e)
-        {
-          ApiUtils.sendError(context, 400, "Invalid credential_profile_id: " + credIdsArray.getString(i));
-
-          return;
-        }
       }
 
       var existsQuery = new JsonObject()
@@ -410,9 +359,9 @@ public class Discovery
           // Prepare batch insert for new credential mappings
           var batchParams = new JsonArray();
 
-          for (var i = 0; i < credIds.size(); i++)
+          for (var i = 0; i < credentialIds.size(); i++)
           {
-            batchParams.add(new JsonArray().add(id).add(credIds.getLong(i)));
+            batchParams.add(new JsonArray().add(id).add(credentialIds.getLong(i)));
           }
 
           var batchQuery = new JsonObject()
@@ -494,6 +443,7 @@ public class Discovery
           }
 
           var request = new JsonObject().put(ID, id);
+
           vertx.eventBus().send(DISCOVERY_RUN,request);
 
           context.response()
@@ -512,9 +462,11 @@ public class Discovery
         }
       });
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
       LOGGER.error("Failed to process discovery request");
+
+      ApiUtils.sendError(context, 500, "Internal server error");
     }
   }
 
@@ -527,6 +479,7 @@ public class Discovery
       if (id == -1)
       {
         ApiUtils.sendError(context, 400, "Invalid discovery ID");
+
         return;
       }
 
@@ -535,7 +488,8 @@ public class Discovery
         .put(PARAMS, new JsonArray().add(id));
 
       executeQuery(query)
-        .onComplete(queryResult -> {
+        .onComplete(queryResult ->
+        {
           if(queryResult.succeeded())
           {
             var result = queryResult.result();

@@ -2,8 +2,6 @@ package com.example.NMS.api;
 
 import com.example.NMS.api.handlers.Auth;
 import com.example.NMS.api.handlers.Credential;
-//import com.example.NMS.api.handlers.Discovery;
-//import com.example.NMS.api.handlers.Provision;
 import com.example.NMS.api.handlers.Discovery;
 import com.example.NMS.api.handlers.Provision;
 import io.vertx.core.AbstractVerticle;
@@ -49,7 +47,8 @@ public class Server extends AbstractVerticle
 
     router.route("/api/*").handler(ctx ->
     {
-      String path = ctx.normalizedPath();
+      var path = ctx.normalizedPath();
+
       if (path.endsWith("/register") || path.endsWith("/login"))
       {
         ctx.next();
@@ -71,13 +70,14 @@ public class Server extends AbstractVerticle
     new Auth(jwtAuth).init(authRoute);
 
     new Credential().init(credentialRoute);
-//
+
     new Discovery().init(discoveryRoute);
-//
+
     new Provision().init(provisionRoute);
 
-    router.errorHandler(401, ctx -> {
-      ctx.response()
+    router.errorHandler(401, context ->
+    {
+      context.response()
         .setStatusCode(401)
         .putHeader("Content-Type", "application/json")
         .end(new JsonObject()

@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static com.example.NMS.constant.Constant.*;
+import static com.example.NMS.constant.Constant.TIMER_INTERVAL_SECONDS;
 
 public class MetricCache
 {
@@ -20,9 +21,6 @@ public class MetricCache
 
   // Static cache of metric jobs: metric_id -> JsonObject
   private static final ConcurrentHashMap<Long, JsonObject> metricJobCache = new ConcurrentHashMap<>();
-
-  // Timer interval (seconds) for decrementing remaining times
-  private static final int TIMER_INTERVAL_SECONDS = 10;
 
   // Flag to ensure cache is initialized only once
   private static boolean isCacheInitialized = false;
@@ -45,7 +43,8 @@ public class MetricCache
       "WHERE m.is_enabled = true";
 
     QueryProcessor.executeQuery(new JsonObject().put(QUERY, query))
-      .onComplete(queryResult -> {
+      .onComplete(queryResult ->
+      {
         if(queryResult.succeeded())
         {
           var result = queryResult.result();

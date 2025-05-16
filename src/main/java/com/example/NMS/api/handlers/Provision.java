@@ -26,18 +26,18 @@ public class Provision
 
   public void init(Router provisionRouter)
   {
-    provisionRouter.post("/api/provision/:id").handler(this::create);
+    provisionRouter.post("/api/provision/:id").handler(this::createProvision);
 
-    provisionRouter.get("/api/provision").handler(this::getAll);
+    provisionRouter.get("/api/provision").handler(this::getAllProvisions);
 
-    provisionRouter.delete("/api/provision/:id").handler(this::delete);
+    provisionRouter.delete("/api/provision/:id").handler(this::deleteProvision);
 
-    provisionRouter.put("/api/provision/:id/metrics").handler(this::update);
+    provisionRouter.put("/api/provision/:id/metrics").handler(this::updateMetrics);
 
     provisionRouter.get("/api/polled-data").handler(this::getAllPolledData);
   }
 
-  public void create(RoutingContext context)
+  public void createProvision(RoutingContext context)
   {
     try
     {
@@ -119,7 +119,7 @@ public class Provision
   }
 
 
-  public void getAll(RoutingContext context)
+  public void getAllProvisions(RoutingContext context)
   {
     try
     {
@@ -139,6 +139,7 @@ public class Provision
 
               return;
             }
+
             context.response()
               .setStatusCode(200)
               .putHeader("Content-Type", "application/json")
@@ -163,7 +164,7 @@ public class Provision
     }
   }
 
-  public void delete(RoutingContext context)
+  public void deleteProvision(RoutingContext context)
   {
     try
     {
@@ -206,15 +207,15 @@ public class Provision
           }
         });
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
-      LOGGER.error("Error deleting provision job: {}", e.getMessage());
+      LOGGER.error("Error deleting provision job: {}", exception.getMessage());
 
       ApiUtils.sendError(context, 500, "Internal server error");
     }
   }
 
-  public void update(RoutingContext context)
+  public void updateMetrics(RoutingContext context)
   {
     try
     {
@@ -239,12 +240,13 @@ public class Provision
       if (metrics == null || metrics.isEmpty())
       {
         ApiUtils.sendError(context, 400, "No metrics specified");
+
         return;
       }
 
       var batchParams = new JsonArray();
 
-      for (int i = 0; i < metrics.size(); i++)
+      for (var i = 0; i < metrics.size(); i++)
       {
         var metric = metrics.getJsonObject(i);
 
@@ -255,16 +257,11 @@ public class Provision
         if (name == null || isEnabled == null)
         {
           ApiUtils.sendError(context, 400, "Invalid metric configuration: metric_type and is_enabled are required");
+
           return;
         }
 
-        if (!Arrays.asList("CPU", "MEMORY", "DISK", "NETWORK", "PROCESS", "UPTIME").contains(name))
-        {
-          ApiUtils.sendError(context, 400, "Invalid metric name: " + name);
-          return;
-        }
-
-        Integer interval = metric.getInteger(POLLING_INTERVAL);
+        var interval = metric.getInteger(POLLING_INTERVAL);
 
         if (isEnabled && (interval == null || interval <= 0))
         {
@@ -338,23 +335,15 @@ public class Provision
 
                     var isEnabled = metric.getBoolean(IS_ENABLED);
 
-                    MetricCache.updateMetricJob(
-                      metricId,
-                      id,
-                      metricName,
-                      pollingInterval,
-                      ip,
-                      port,
-                      credData,
-                      isEnabled
-                    );
+                    MetricCache.updateMetricJob(metricId, id, metricName, pollingInterval, ip, port, credData, isEnabled);
                   }
 
                   return Future.succeededFuture();
                 });
             });
         })
-        .onComplete(result -> {
+        .onComplete(result ->
+        {
           if(result.succeeded())
           {
             context.response()
@@ -412,9 +401,9 @@ public class Provision
           }
         });
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
-      LOGGER.error("Error fetching polled data: {}", e.getMessage());
+      LOGGER.error("Error fetching polled data: {}", exception.getMessage());
 
       ApiUtils.sendError(context, 500, "Internal server error");
     }

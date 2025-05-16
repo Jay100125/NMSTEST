@@ -4,6 +4,7 @@ import com.example.NMS.api.Server;
 import com.example.NMS.database.Database;
 import com.example.NMS.discovery.Discovery;
 import com.example.NMS.polling.Polling;
+import com.example.NMS.polling.Scheduler;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import org.slf4j.Logger;
@@ -28,6 +29,8 @@ public class Main
       .compose(res -> vertx.deployVerticle(Database.class.getName()))
 
       .compose(res -> vertx.deployVerticle(Discovery.class.getName()))
+
+      .compose(res -> vertx.deployVerticle(Scheduler.class.getName()))
 
       .compose(res -> vertx.deployVerticle(Polling.class.getName()))
 

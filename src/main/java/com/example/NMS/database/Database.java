@@ -33,7 +33,7 @@ public class Database extends AbstractVerticle
   {
     // Get the shared SqlClient instance from DatabaseClient
     // This ensures that all Database verticle instances share the same client and connection pool
-    client = DatabaseClient.getClient(vertx);
+    client =  DatabaseClient.getInstance(vertx).getClient();
 
     // Initialize the database schema
     initializeSchema()
@@ -153,15 +153,15 @@ public class Database extends AbstractVerticle
     {
       var request = message.body();
 
-      var query = request.getString("query");
+      var query = request.getString(QUERY);
 
-      var batchParams = request.getJsonArray("batchParams");
+      var batchParams = request.getJsonArray(BATCHPARAMS);
 
       if (query == null || batchParams == null || batchParams.isEmpty())
       {
         LOGGER.error("Invalid batch request: query={}, batchParams={}", query, batchParams);
 
-        message.reply(new JsonObject().put("msg", "Error").put("ERROR", "Missing query or batchParams"));
+        message.fail(500, "Missing query or batch parameters");
 
         return;
       }
@@ -190,7 +190,7 @@ public class Database extends AbstractVerticle
         {
           var insertedIds = new JsonArray();
 
-          RowSet<Row> rows = asyncResult.result();
+          var rows = asyncResult.result();
 
           // Iterate through all RowSets
           while (rows != null)
@@ -236,7 +236,7 @@ public class Database extends AbstractVerticle
    */
   private Future<Void> initializeSchema()
   {
-    Promise<Void> promise = Promise.promise();
+    var promise = Promise.<Void>promise();
     // Using executeBlocking as schema loading might involve file I/O
     vertx.executeBlocking(blockingPromise ->
     {
@@ -262,7 +262,7 @@ public class Database extends AbstractVerticle
         // Split schema into individual DDL statements
         var ddlStatements = schema.split(";");
 
-        var executionFutures = new ArrayList<Future<Void>>();
+        var executionFutures = new ArrayList<Future>();
 
         for (var statement : ddlStatements)
         {
@@ -271,7 +271,7 @@ public class Database extends AbstractVerticle
           if (!trimmedStatement.isEmpty())
           {
             // Execute each DDL statement
-            Promise<Void> statementPromise = Promise.promise();
+            var statementPromise = Promise.<Void>promise();
 
             LOGGER.debug("Executing DDL: {}", trimmedStatement);
 
@@ -293,33 +293,34 @@ public class Database extends AbstractVerticle
         }
 
         // Wait for all DDL statements to complete
-        CompositeFuture.all(new ArrayList<>(executionFutures))
-          .onSuccess(v -> {
+        CompositeFuture.all((executionFutures))
+          .onSuccess(result ->
+          {
             LOGGER.info("All DDL statements processed.");
 
             blockingPromise.complete();
           })
-          .onFailure(err -> {
-            LOGGER.error("Error processing DDL statements: {}", err.getMessage(), err);
+          .onFailure(error -> {
+            LOGGER.error("Error processing DDL statements: {}", error.getMessage(), error);
 
-            blockingPromise.fail(err);
+            blockingPromise.fail(error);
           });
 
       }
-      catch (Exception e)
+      catch (Exception exception)
       {
-        LOGGER.error("Failed to read or process schema.sql: {}", e.getMessage(), e);
+        LOGGER.error("Failed to read or process schema.sql: {}", exception.getMessage(), exception);
 
-        blockingPromise.fail(e);
+        blockingPromise.fail(exception);
       }
-    }, res -> {
-      if (res.succeeded())
+    }, result -> {
+      if (result.succeeded())
       {
         promise.complete();
       }
       else
       {
-        promise.fail(res.cause());
+        promise.fail(result.cause());
       }
     });
     return promise.future();

@@ -25,7 +25,7 @@ public class Discovery extends AbstractVerticle
   {
     vertx.eventBus().<JsonObject>localConsumer(DISCOVERY_RUN, message ->
     {
-      var id = message.body().getLong("id");
+      var id = message.body().getLong(ID);
 
       runDiscovery(id)
         .onComplete(result ->
@@ -38,6 +38,7 @@ public class Discovery extends AbstractVerticle
     });
 
     LOGGER.info("Discovery verticle deployed");
+
     startPromise.complete();
   }
 
@@ -52,9 +53,10 @@ public class Discovery extends AbstractVerticle
     return fetchDiscoveryProfile(id)
       .compose(body -> executeDiscovery(body, id))
       .compose(results -> setDiscoveryStatus(id).map(results))
-      .recover(err -> Future.failedFuture(err));
+      .recover(Future::failedFuture);
   }
 
+  // after discovery run set it's status to true by default when user create discovery profile it is set to false
   private Future<Void> setDiscoveryStatus(long id)
   {
     var query = new JsonObject()
@@ -74,6 +76,7 @@ public class Discovery extends AbstractVerticle
       });
   }
 
+  // fetch all the credential and ip regarding the discovery profile
   private Future<JsonArray> fetchDiscoveryProfile(long id)
   {
     var fetchQuery = new JsonObject()
@@ -130,6 +133,7 @@ public class Discovery extends AbstractVerticle
   private Future<JsonObject> doSSH(JsonArray reachResults, JsonArray credentials, long discoveryId, int port)
   {
     var reachableIps = new JsonArray();
+
     var discoveryResults = new JsonArray();
 
     var pluginInput = new JsonObject()

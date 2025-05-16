@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class Utility
 {
@@ -72,6 +73,7 @@ public class Utility
       var baseIp = cidrParts[0].trim();
 
       int maskBits;
+
       try
       {
         maskBits = Integer.parseInt(cidrParts[1].trim());
@@ -103,9 +105,7 @@ public class Utility
       }
       ipList.add(ipInput);
     }
-
     return ipList;
-
   }
 
   private static long ipToLong(InetAddress ip)
@@ -152,9 +152,9 @@ public class Utility
       command.add("1000"); // 1000ms
       command.addAll(ipList); // Add all IPs
 
-      var pb = new ProcessBuilder(command);
+      var processBuilder = new ProcessBuilder(command);
 
-      var process = pb.start();
+      var process = processBuilder.start();
 
       LOGGER.info("Ip {} fping command: {}", ipList, String.join(" ", command));
       // Read alive IPs from stdout
@@ -171,15 +171,8 @@ public class Utility
         }
       }
 
-
-//        for (var ip : aliveIps)
-//        {
-//          logger.info("fping alive IP: {}", ip);
-//
-//        }
       LOGGER.info("fping alive IPs: {}", aliveIps);
 
-      LOGGER.info("FPING command: {}", String.join(" ", command));
       // Log stderr for debugging
 
       var stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
@@ -206,8 +199,6 @@ public class Utility
     catch (Exception e)
     {
       LOGGER.error("Error running fping: {}", e.getMessage());
-
-//        throw e; // Let caller handle
     }
 
     // Check port for each IP
@@ -232,9 +223,9 @@ public class Utility
 
           LOGGER.debug("Port check for IP {} on port {}: {}", ip, port, isPortOpen ? "open" : "closed");
         }
-        catch (Exception e)
+        catch (Exception exception)
         {
-          LOGGER.error("Error checking port {} for IP {}: {}", port, ip, e.getMessage());
+          LOGGER.error("Error checking port {} for IP {}: {}", port, ip, exception.getMessage());
 
           isPortOpen = false;
         }
@@ -266,8 +257,6 @@ public class Utility
 
     OutputStreamWriter stdOutput = null;
 
-    LOGGER.info("-----------------------------------------------------------");
-
     try
     {
       // Start the SSH plugin process
@@ -290,6 +279,8 @@ public class Utility
       stdInput = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
       String line;
+
+      var exitCode = process.waitFor(2, TimeUnit.MINUTES) ? process.exitValue() : -1;
 
       while ((line = stdInput.readLine()) != null)
       {
@@ -318,7 +309,6 @@ public class Utility
       }
 
       // Wait for the process to exit
-      var exitCode = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS) ? process.exitValue() : -1;
 
       if (exitCode != 0)
       {
