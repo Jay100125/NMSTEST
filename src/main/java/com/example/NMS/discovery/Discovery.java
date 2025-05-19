@@ -16,13 +16,28 @@ import static com.example.NMS.service.QueryProcessor.executeBatchQuery;
 import static com.example.NMS.service.QueryProcessor.executeQuery;
 import static com.example.NMS.utility.Utility.*;
 
+
+/**
+ * Vert.x verticle for running network discovery in Lite NMS.
+ * Consumes discovery requests from the event bus, fetches discovery profiles, resolves IP addresses,
+ * checks reachability, executes an SSH plugin for discovery, and stores results in the database.
+ */
+
 public class Discovery extends AbstractVerticle
 {
   private static final Logger LOGGER = LoggerFactory.getLogger(Discovery.class);
 
+
+  /**
+   * Starts the discovery verticle.
+   * Sets up an event bus consumer to process discovery requests and signals successful deployment.
+   *
+   * @param startPromise The promise to complete or fail based on startup success.
+   */
   @Override
   public void start(Promise<Void> startPromise)
   {
+    // Set up event bus consumer for discovery requests
     vertx.eventBus().<JsonObject>localConsumer(DISCOVERY_RUN, message ->
     {
       var id = message.body().getLong(ID);
@@ -43,10 +58,11 @@ public class Discovery extends AbstractVerticle
   }
 
   /**
-   * Run a discovery process for the given discovery ID.
+   * Runs a discovery process for the specified discovery profile ID.
+   * Fetches the profile, resolves IPs, checks reachability, performs SSH discovery, and stores results.
    *
-   * @param id The discovery profile ID
-   * @return Future containing the reachability results
+   * @param id The discovery profile ID.
+   * @return A Future containing the reachability results as a JSON array.
    */
   private Future<JsonArray> runDiscovery(long id)
   {
@@ -56,7 +72,13 @@ public class Discovery extends AbstractVerticle
       .recover(Future::failedFuture);
   }
 
-  // after discovery run set it's status to true by default when user create discovery profile it is set to false
+  /**
+   * Updates the discovery profile status to true (completed) in the database.
+   * By default, profiles are created with a false (pending) status.
+   *
+   * @param id The discovery profile ID.
+   * @return A Future indicating success or failure.
+   */
   private Future<Void> setDiscoveryStatus(long id)
   {
     var query = new JsonObject()
@@ -76,7 +98,12 @@ public class Discovery extends AbstractVerticle
       });
   }
 
-  // fetch all the credential and ip regarding the discovery profile
+  /**
+   * Fetches the discovery profile details, including IP addresses, port, and credentials.
+   *
+   * @param id The discovery profile ID.
+   * @return A Future containing a JSON array with the profile data.
+   */
   private Future<JsonArray> fetchDiscoveryProfile(long id)
   {
     var fetchQuery = new JsonObject()
@@ -96,6 +123,14 @@ public class Discovery extends AbstractVerticle
       });
   }
 
+  /**
+   * Executes the discovery process using the profile data.
+   * Resolves IP addresses, checks reachability, performs SSH discovery, and prepares results.
+   *
+   * @param result The JSON array containing the discovery profile data.
+   * @param id The discovery profile ID.
+   * @return A Future containing a JSON array of reachability results.
+   */
   private Future<JsonArray> executeDiscovery(JsonArray result, long id)
   {
     var profile = result.getJsonObject(0);
@@ -120,22 +155,47 @@ public class Discovery extends AbstractVerticle
       });
   }
 
+  /**
+   * Resolves IP addresses from the input string (single IP, range, or CIDR).
+   *
+   * @param ipInput The IP address input string.
+   * @return A Future containing a list of resolved IP addresses.
+   */
   private Future<List<String>> resolveIps(String ipInput)
   {
     return vertx.executeBlocking(() -> resolveIpAddresses(ipInput), false);
   }
 
+  /**
+   * Checks reachability and port availability for the given IP addresses.
+   *
+   * @param ips The list of IP addresses to check.
+   * @param port        The port to verify (e.g., 22 for SSH).
+   * @return A Future containing a JSON array of reachability results.
+   */
   private Future<JsonArray> checkReach(List<String> ips, int port)
   {
     return vertx.executeBlocking(() -> checkReachability(ips, port), false);
   }
 
+
+  /**
+   * Performs SSH discovery using the provided credentials for reachable IPs.
+   * Executes an SSH plugin to collect system information (e.g., uname).
+   *
+   * @param reachResults The JSON array of reachability results.
+   * @param credentials  The JSON array of credential profiles.
+   * @param discoveryId  The discovery profile ID.
+   * @param port         The port for SSH connections.
+   * @return A Future containing a JSON object with reachability and discovery results.
+   */
   private Future<JsonObject> doSSH(JsonArray reachResults, JsonArray credentials, long discoveryId, int port)
   {
     var reachableIps = new JsonArray();
 
     var discoveryResults = new JsonArray();
 
+    // Prepare plugin input for SSH discovery
     var pluginInput = new JsonObject()
       .put("category", "discovery")
       .put("metric.type", "uname")
@@ -146,6 +206,7 @@ public class Discovery extends AbstractVerticle
 
     LOGGER.info(reachResults.encodePrettily());
 
+    // Process reachability and plugin results
     for (var i = 0; i < reachResults.size(); i++)
     {
       var obj = reachResults.getJsonObject(i);
@@ -162,9 +223,10 @@ public class Discovery extends AbstractVerticle
 
     LOGGER.info("Plugin input: {}", pluginInput.encodePrettily());
 
-    // Execute spawnPlugin in a blocking context
+    // Execute SSH plugin
     return vertx.executeBlocking(() -> spawnPlugin(pluginInput), false)
-      .compose(pluginResults -> {
+      .compose(pluginResults ->
+      {
         for (var i = 0; i < reachResults.size(); i++)
         {
           var obj = reachResults.getJsonObject(i);
@@ -228,6 +290,14 @@ public class Discovery extends AbstractVerticle
       });
   }
 
+  /**
+   * Stores discovery results in the database.
+   * Inserts or updates discovery result records with IP, port, status, message, and credential ID.
+   *
+   * @param discoveryResults The JSON array of discovery results.
+   * @param discoveryId      The discovery profile ID.
+   * @return A Future indicating success or failure.
+   */
   private Future<Void> storeDiscoveryResults(JsonArray discoveryResults, long discoveryId)
   {
     var batchParams = new JsonArray();

@@ -17,11 +17,20 @@ import static com.example.NMS.service.QueryProcessor.*;
 
 /**
  * Manages CRUD operations and execution of discovery profiles in Lite NMS, enabling network device detection.
+ * This class provides REST-ful API endpoints to create, retrieve, update, delete, and run discovery profiles,
+ * as well as fetch their results. Discovery profiles define network scanning parameters, including IP addresses,
+ * ports, and associated credentials.
  */
 public class Discovery
 {
   private static final Logger LOGGER = LoggerFactory.getLogger(Discovery.class);
 
+  /**
+   * Initializes API routes for discovery profile management endpoints.
+   * Sets up routes for creating, retrieving, updating, deleting, running, and fetching results of discovery profiles.
+   *
+   * @param discoveryRoute The Vert.x router to attach the discovery endpoints to.
+   */
   public void init(Router discoveryRoute)
   {
     discoveryRoute.post("/api/discovery").handler(this::create);
@@ -40,17 +49,19 @@ public class Discovery
   }
 
   /**
-   * Handles POST requests to create a new discovery profile, associating it with credentials and storing it in PostgreSQL.
+   * Handles POST requests to create a new discovery profile.
+   * Validates the request body, inserts the profile into the database, and associates it with specified credentials.
    *
-   * @param context The routing context containing the HTTP request.
+   * @param context The routing context containing the HTTP request with discovery profile data.
    */
-
   private void create(RoutingContext context)
   {
     try
     {
+      // Extract JSON request body
       var body = context.body().asJsonObject();
 
+      // Validate required fields
       if (body == null || !body.containsKey(DISCOVERY_PROFILE_NAME) || !body.containsKey(CREDENTIAL_PROFILE_ID) || !body.containsKey(IP_ADDRESS) || !body.containsKey(PORT))
       {
         ApiUtils.sendError(context, 400, "missing field or invalid data");
@@ -58,6 +69,7 @@ public class Discovery
         return;
       }
 
+      // Extract and validate discovery details
       var discoveryName = body.getString(DISCOVERY_PROFILE_NAME);
 
       var credentialIds = body.getJsonArray(CREDENTIAL_PROFILE_ID);
@@ -88,6 +100,7 @@ public class Discovery
 
           var discoveryId = result.getJsonObject(0).getLong(ID);
 
+          // Prepare batch query to insert credential mappings
           var batchParams = new JsonArray();
 
           for (var i = 0; i < credentialIds.size(); i++)
@@ -99,47 +112,43 @@ public class Discovery
             .put(QUERY, QueryConstant.INSERT_DISCOVERY_CREDENTIAL)
             .put(BATCHPARAMS, batchParams);
 
-          return executeBatchQuery(batchQuery)
-            .map(discoveryId);
+          return executeBatchQuery(batchQuery).map(discoveryId);
 
         })
         .onComplete(queryResult ->
         {
           if (queryResult.succeeded())
           {
-            var discoveryId = queryResult.result();
+            var result = queryResult.result();
 
-            context.response()
-              .setStatusCode(201)
-              .putHeader("Content-Type", "application/json")
-              .end(new JsonObject()
-                .put(MESSAGE, SUCCESS)
-                .put(ID, discoveryId)
-                .encodePrettily());
+            ApiUtils.sendSuccess(context, 201, "discovery profile created",new JsonArray().add(result));
           }
           else
           {
-            ApiUtils.sendError(context, 500, "Failed to create discovery: " + queryResult.cause().getMessage());
+            ApiUtils.sendError(context, 500, "Failed to create discovery profile: " + queryResult.cause().getMessage());
           }
         });
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
-      LOGGER.error("Error creating discovery: {}", e.getMessage());
+      LOGGER.error("Error creating discovery: {}", exception.getMessage());
 
       ApiUtils.sendError(context, 500, "Internal server error");
     }
   }
 
+
   /**
    * Handles GET requests to retrieve a discovery profile by its ID.
+   * Fetches the profile from the database and returns it if found.
    *
-   * @param context The routing context containing the HTTP request.
+   * @param context The routing context containing the HTTP request with discovery ID.
    */
   private void getById(RoutingContext context)
   {
     try
     {
+      // Parse and validate discovery ID from path
       var id = ApiUtils.parseIdFromPath(context, ID);
 
       if (id == -1)
@@ -161,13 +170,7 @@ public class Discovery
 
             if (!result.isEmpty())
             {
-              context.response()
-                .setStatusCode(200)
-                .putHeader("Content-Type", "application/json")
-                .end(new JsonObject()
-                  .put(MESSAGE, SUCCESS)
-                  .put(RESULT, result)
-                  .encodePrettily());
+              ApiUtils.sendSuccess(context, 200, "Discovery profile for current Id",result);
             }
             else
             {
@@ -178,15 +181,15 @@ public class Discovery
           {
             var error = queryResult.cause();
 
-            LOGGER.error("Error executing query: {}", error.getMessage());
+            LOGGER.error("Failed to fetch discovery ID={}: {}", id, error.getMessage());
 
             ApiUtils.sendError(context, 500, "Database query failed: " + error.getMessage());
           }
         });
     }
-    catch (Exception e)
+    catch (Exception exception)
     {
-      LOGGER.error("Error getting discovery by ID: {}", e.getMessage());
+      LOGGER.error("Unexpected error during discovery retrieval : {}", exception.getMessage());
 
       ApiUtils.sendError(context, 500, "Internal server error");
     }
@@ -194,12 +197,14 @@ public class Discovery
 
 
   /**
-   * Handles GET requests to retrieve all discovery profiles from the database.
+   * Handles GET requests to retrieve all discovery profiles.
+   * Fetches all profiles from the database and returns them.
    *
    * @param context The routing context containing the HTTP request.
    */
   private void getAll(RoutingContext context)
   {
+    // Prepare query to fetch all discovery profiles
     var query = new JsonObject().put(QUERY, QueryConstant.GET_ALL_DISCOVERIES);
 
     executeQuery(query)
@@ -211,13 +216,7 @@ public class Discovery
 
           if (!result.isEmpty())
           {
-            context.response()
-              .setStatusCode(200)
-              .putHeader("Content-Type", "application/json")
-              .end(new JsonObject()
-                .put(MESSAGE, SUCCESS)
-                .put(RESULT, result)
-                .encodePrettily());
+            ApiUtils.sendSuccess(context, 200, "Discovery profiles",result);
           }
           else
           {
@@ -237,8 +236,9 @@ public class Discovery
 
   /**
    * Handles DELETE requests to remove a discovery profile by its ID.
+   * Deletes the profile from the database if it exists.
    *
-   * @param context The routing context containing the HTTP request.
+   * @param context The routing context containing the HTTP request with discovery ID.
    */
   private void delete(RoutingContext context)
   {
@@ -266,13 +266,14 @@ public class Discovery
 
             if (!result.isEmpty())
             {
-              context.response()
-                .setStatusCode(200)
-                .putHeader("Content-Type", "application/json")
-                .end(result.encodePrettily());
+              LOGGER.info("Discovery profile deleted: ID={}", id);
+
+              ApiUtils.sendSuccess(context, 200,"Discovery profile deleted successfully" ,result);
             }
             else
             {
+              LOGGER.warn("Discovery profile not found for ID={}", id);
+
               ApiUtils.sendError(context, 404, "Discovery profile not found");
             }
           }
@@ -370,19 +371,13 @@ public class Discovery
 
           return executeQuery(updateQuery)
             .compose(v -> executeQuery(deleteQuery))
-            .compose(v -> executeBatchQuery(batchQuery));
+            .compose(v -> executeBatchQuery(batchQuery)).map(id);
         })
         .onComplete(queryResult ->
         {
           if(queryResult.succeeded())
           {
-            context.response()
-              .setStatusCode(200)
-              .putHeader("Content-Type", "application/json")
-              .end(new JsonObject()
-                .put(MESSAGE, SUCCESS)
-                .put(ID, id)
-                .encodePrettily());
+            ApiUtils.sendSuccess(context, 200, "Discovery Profile Updated Successfully",new JsonArray().add(id));
           }
           else
           {
@@ -410,14 +405,16 @@ public class Discovery
   }
 
   /**
-   * Handles POST requests to run a discovery profile, scanning the network for devices.
+   * Handles POST requests to run a discovery profile.
+   * Validates the profile's existence and triggers a network scan via the event bus.
    *
-   * @param context The routing context containing the HTTP request.
+   * @param context The routing context containing the HTTP request with discovery ID.
    */
   private void run(RoutingContext context)
   {
     try
     {
+      // Parse and validate discovery ID from path
       var id = ApiUtils.parseIdFromPath(context, ID);
 
       if (id == -1)
@@ -442,17 +439,13 @@ public class Discovery
             return;
           }
 
+          // Trigger discovery via event bus
+
           var request = new JsonObject().put(ID, id);
 
           vertx.eventBus().send(DISCOVERY_RUN,request);
 
-          context.response()
-            .setStatusCode(202)
-            .putHeader("Content-Type", "application/json")
-            .end(new JsonObject()
-              .put(MESSAGE, "Discovery is currently being processed")
-              .put(ID, id)
-              .encodePrettily());
+          ApiUtils.sendSuccess(context, 200, "Discovery Profile is currently running", new JsonArray());
         }
         else
         {
@@ -470,10 +463,19 @@ public class Discovery
     }
   }
 
+
+
+  /**
+   * Handles GET requests to retrieve the results of a discovery profile.
+   * Fetches scan results from the database and returns them, or an empty result if none exist.
+   *
+   * @param context The routing context containing the HTTP request with discovery ID.
+   */
   private void getResults(RoutingContext context)
   {
     try
     {
+      // Parse and validate discovery ID from path
       var id = ApiUtils.parseIdFromPath(context, ID);
 
       if (id == -1)
@@ -506,13 +508,9 @@ public class Discovery
             }
             else
             {
-              context.response()
-                .setStatusCode(200)
-                .putHeader("Content-Type", "application/json")
-                .end(new JsonObject()
-                  .put(MESSAGE, SUCCESS)
-                  .put(RESULT, result)
-                  .encodePrettily());
+              LOGGER.info("Retrieved discovery results for ID={}", id);
+
+              ApiUtils.sendSuccess(context, 200, "Discovery result for current profile",result);
             }
           }
           else
